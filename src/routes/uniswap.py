@@ -22,8 +22,8 @@ PANCAKESWAP_V3_QUOTER_ADDRESS = "0xB048Bbc1Ee6b733FFfCFb9e9CeF7375518e25997"
 
 # Load ABIs
 def load_abi(filename):
-    parent_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), os.pardir, "abi"))
-    abi_path = os.path.join(parent_dir, filename)
+    # The ABI files are directly in the 'src' directory, which is the parent of 'routes'
+    abi_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), filename)
     with open(abi_path, "r") as f:
         return json.load(f)
 
@@ -126,7 +126,7 @@ def get_pool_info():
             "pools_found": len(found_pools),
             "pools": found_pools,
             "dex": "PancakeSwap V3",
-            "note": "Using PancakeSwap V3 as it's more popular on BSC than Uniswap V3"
+            "note": "Using PancakeSwap V3 as it\\\"s more popular on BSC than Uniswap V3"
         })
     except Exception as e:
         logger.exception("Error getting pool info")
@@ -328,7 +328,7 @@ def approve_token():
         logger.info(f"Transaction signed, type: {type(signed_txn)}")
         
         # Fix for the rawTransaction attribute error
-        # In newer versions of web3.py, it might be 'raw_transaction' instead of 'rawTransaction'
+        # In newer versions of web3.py, it might be \'raw_transaction\' instead of \'rawTransaction\'
         raw_transaction = None
         if hasattr(signed_txn, 'rawTransaction'):
             raw_transaction = signed_txn.rawTransaction
@@ -446,6 +446,7 @@ def swap_token():
             }), 500
         
         # Send the transaction
+        logger.info("Sending transaction...")
         tx_hash = w3.eth.send_raw_transaction(raw_transaction)
         logger.info(f"Swap transaction sent: {tx_hash.hex()}")
         
