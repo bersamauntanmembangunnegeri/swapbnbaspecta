@@ -18,8 +18,16 @@ CORS(app)
 app.register_blueprint(user_bp, url_prefix='/api/users')
 app.register_blueprint(uniswap_bp, url_prefix='/api')
 
-# uncomment if you need to use database
-app.config['SQLALCHEMY_DATABASE_URI'] = f"sqlite:///{os.path.join(os.path.dirname(__file__), 'database', 'app.db')}"
+# Database configuration - use in-memory SQLite for cloud deployment
+# This prevents file permission issues on platforms like Render.com
+database_url = os.environ.get('DATABASE_URL')
+if database_url:
+    # Use external database if provided (PostgreSQL, MySQL, etc.)
+    app.config['SQLALCHEMY_DATABASE_URI'] = database_url
+else:
+    # Use in-memory SQLite for development and cloud deployment
+    app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///:memory:'
+
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 db.init_app(app)
 with app.app_context():
