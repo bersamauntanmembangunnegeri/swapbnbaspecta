@@ -1,2 +1,2 @@
-web: gunicorn src.main:app
+web: venv/bin/gunicorn src.main:app
 
