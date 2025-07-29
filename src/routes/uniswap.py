@@ -10,10 +10,10 @@ uniswap_bp = Blueprint('uniswap', __name__)
 # Configuration
 CONTRACT_ADDRESS = "0xad8c787992428cD158E451aAb109f724B6bc36de"  # ASPECTA token
 BNB_CHAIN_RPC = "https://bsc-dataseed.binance.org/"
-UNISWAP_V3_FACTORY_ADDRESS = "0xdB1d10011AD0Ff90774D0C6Bb92e5C5c8b4461F7"
+PANCAKESWAP_V3_FACTORY_ADDRESS = "0x0BFbCF9fa4f9C56B0F40a671Ad40E0805A091865"
 WBNB_ADDRESS = "0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c"
-UNIVERSAL_ROUTER_ADDRESS = "0x3fC91A3afd70395Cd496C647d5a6CC9D4B2b7FAD"
-QUOTER_V2_ADDRESS = "0x78D78E420Da98ad378D7799bE8f4AF69033EB077"
+PANCAKESWAP_V3_ROUTER_ADDRESS = "0x13f4EA83D0bd40E75C8222255bc855a974568Dd4"
+PANCAKESWAP_V3_QUOTER_ADDRESS = "0xB048Bbc1Ee6b733FFfCFb9e9CeF7375518e25997"
 
 # Load ABIs
 def load_abi(filename):
@@ -25,10 +25,10 @@ def load_abi(filename):
 
 ERC20_ABI = load_abi("ERC20_ABI.json")
 QUOTER_V2_ABI = load_abi("IQuoterV2_abi.json")
-UNIVERSAL_ROUTER_ABI = load_abi("UniversalRouter_abi.json")
+ROUTER_ABI = load_abi("UniversalRouter_abi.json")
 
-# Uniswap V3 Factory ABI (simplified)
-UNISWAP_V3_FACTORY_ABI = [
+# PancakeSwap V3 Factory ABI (simplified)
+PANCAKESWAP_V3_FACTORY_ABI = [
     {
         "inputs": [
             {"internalType": "address", "name": "tokenA", "type": "address"},
@@ -73,57 +73,51 @@ def get_token_info():
 
 @uniswap_bp.route('/pool-info', methods=['GET'])
 def get_pool_info():
-    """Find Uniswap V3 pools for the token paired with WBNB"""
+    """Find PancakeSwap V3 pools for the token paired with WBNB"""
     try:
         if not w3.is_connected():
             return jsonify({"error": "Failed to connect to BNB Smart Chain"}), 500
         
         factory_contract = w3.eth.contract(
-            address=UNISWAP_V3_FACTORY_ADDRESS,
-            abi=UNISWAP_V3_FACTORY_ABI
+            address=PANCAKESWAP_V3_FACTORY_ADDRESS,
+            abi=PANCAKESWAP_V3_FACTORY_ABI
         )
         
         token_address = w3.to_checksum_address(CONTRACT_ADDRESS)
         wbnb_address = w3.to_checksum_address(WBNB_ADDRESS)
         
-        # Common Uniswap V3 fee tiers
-        fee_tiers = [100, 500, 3000, 10000]  # 0.01%, 0.05%, 0.3%, 1%
+        # PancakeSwap V3 fee tiers
+        fee_tiers = [100, 500, 2500, 10000]  # 0.01%, 0.05%, 0.25%, 1%
         
         found_pools = []
         for fee in fee_tiers:
-            # Check both token orderings
-            pool_address_1 = factory_contract.functions.getPool(token_address, wbnb_address, fee).call()
-            if pool_address_1 != "0x0000000000000000000000000000000000000000":
+            # Check pool existence
+            pool_address = factory_contract.functions.getPool(token_address, wbnb_address, fee).call()
+            if pool_address != "0x0000000000000000000000000000000000000000":
                 found_pools.append({
-                    "address": pool_address_1,
+                    "address": pool_address,
                     "fee": fee,
                     "fee_percentage": f"{fee/10000}%",
-                    "pair": "ASPECTA-WBNB"
-                })
-            
-            pool_address_2 = factory_contract.functions.getPool(wbnb_address, token_address, fee).call()
-            if pool_address_2 != "0x0000000000000000000000000000000000000000" and pool_address_2 != pool_address_1:
-                found_pools.append({
-                    "address": pool_address_2,
-                    "fee": fee,
-                    "fee_percentage": f"{fee/10000}%",
-                    "pair": "WBNB-ASPECTA"
+                    "pair": "ASPECTA-WBNB",
+                    "dex": "PancakeSwap V3"
                 })
         
         return jsonify({
             "pools_found": len(found_pools),
-            "pools": found_pools
+            "pools": found_pools,
+            "dex": "PancakeSwap V3",
+            "note": "Using PancakeSwap V3 as it's more popular on BSC than Uniswap V3"
         })
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
 @uniswap_bp.route('/quote', methods=['POST'])
 def get_quote():
-    """Get a quote for swapping ASPECTA to WBNB"""
+    """Get a quote for swapping ASPECTA to WBNB using PancakeSwap V3"""
     try:
         data = request.get_json()
         amount_in = data.get('amount_in')
-        fee = data.get('fee', 3000)
+        fee = data.get('fee', 2500)  # Default to 0.25% for PancakeSwap V3
         
         if not amount_in:
             return jsonify({"error": "amount_in is required"}), 400
@@ -134,7 +128,7 @@ def get_quote():
         # Convert amount to wei (18 decimals for ASPECTA)
         amount_in_wei = int(amount_in * (10 ** 18))
         
-        quoter_contract = w3.eth.contract(address=w3.to_checksum_address(QUOTER_V2_ADDRESS), abi=QUOTER_V2_ABI)
+        quoter_contract = w3.eth.contract(address=w3.to_checksum_address(PANCAKESWAP_V3_QUOTER_ADDRESS), abi=QUOTER_V2_ABI)
         
         # Prepare the parameters for quoteExactInputSingle
         params = {
@@ -160,14 +154,15 @@ def get_quote():
             "fee": fee,
             "fee_percentage": f"{fee/10000}%",
             "gas_estimate": gas_estimate,
-            "price_impact": f"1 ASPECTA = {amount_out_formatted/amount_in:.8f} WBNB"
+            "price_impact": f"1 ASPECTA = {amount_out_formatted/amount_in:.8f} WBNB",
+            "dex": "PancakeSwap V3"
         })
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
 @uniswap_bp.route('/approve', methods=['POST'])
 def approve_token():
-    """Approve the Universal Router to spend ASPECTA tokens"""
+    """Approve the PancakeSwap V3 Router to spend ASPECTA tokens"""
     try:
         data = request.get_json()
         private_key = data.get('private_key')
@@ -189,7 +184,7 @@ def approve_token():
         
         # Build the transaction
         txn = token_contract.functions.approve(
-            w3.to_checksum_address(UNIVERSAL_ROUTER_ADDRESS),
+            w3.to_checksum_address(PANCAKESWAP_V3_ROUTER_ADDRESS),
             amount_wei
         ).build_transaction({
             "chainId": w3.eth.chain_id,
@@ -209,7 +204,8 @@ def approve_token():
             "transaction_hash": tx_hash.hex(),
             "amount_approved": amount,
             "amount_approved_wei": amount_wei,
-            "spender": UNIVERSAL_ROUTER_ADDRESS
+            "spender": PANCAKESWAP_V3_ROUTER_ADDRESS,
+            "dex": "PancakeSwap V3"
         })
     except Exception as e:
         return jsonify({"error": str(e)}), 500
