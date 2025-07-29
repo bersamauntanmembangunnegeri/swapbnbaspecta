@@ -117,7 +117,7 @@ def get_quote():
     try:
         data = request.get_json()
         amount_in = data.get('amount_in')
-        fee = data.get('fee', 2500)  # Default to 0.25% for PancakeSwap V3
+        fee = data.get('fee', 10000)  # Default to 1% fee tier as it has liquidity
         
         if not amount_in:
             return jsonify({"error": "amount_in is required"}), 400
@@ -130,33 +130,51 @@ def get_quote():
         
         quoter_contract = w3.eth.contract(address=w3.to_checksum_address(PANCAKESWAP_V3_QUOTER_ADDRESS), abi=QUOTER_V2_ABI)
         
-        # Prepare the parameters for quoteExactInputSingle
-        params = {
-            "tokenIn": w3.to_checksum_address(CONTRACT_ADDRESS),
-            "tokenOut": w3.to_checksum_address(WBNB_ADDRESS),
-            "fee": fee,
-            "amountIn": amount_in_wei,
-            "sqrtPriceLimitX96": 0
-        }
+        # Try different fee tiers in order of preference (1% has liquidity)
+        fee_tiers_to_try = [fee, 10000, 500, 100, 2500]  # Try requested fee first, then 1% (working), then others
         
-        # Call the quoteExactInputSingle function
-        result = quoter_contract.functions.quoteExactInputSingle(params).call()
-        amount_out, sqrt_price_x96_after, initialized_ticks_crossed, gas_estimate = result
+        for try_fee in fee_tiers_to_try:
+            try:
+                # Prepare the parameters for quoteExactInputSingle
+                params = {
+                    "tokenIn": w3.to_checksum_address(CONTRACT_ADDRESS),
+                    "tokenOut": w3.to_checksum_address(WBNB_ADDRESS),
+                    "fee": try_fee,
+                    "amountIn": amount_in_wei,
+                    "sqrtPriceLimitX96": 0
+                }
+                
+                # Call the quoteExactInputSingle function
+                result = quoter_contract.functions.quoteExactInputSingle(params).call()
+                amount_out, sqrt_price_x96_after, initialized_ticks_crossed, gas_estimate = result
+                
+                # Convert amount out from wei to readable format (18 decimals for WBNB)
+                amount_out_formatted = amount_out / (10 ** 18)
+                
+                return jsonify({
+                    "amount_in": amount_in,
+                    "amount_in_wei": amount_in_wei,
+                    "amount_out": amount_out,
+                    "amount_out_formatted": f"{amount_out_formatted:.6f} WBNB",
+                    "fee": try_fee,
+                    "fee_percentage": f"{try_fee/10000}%",
+                    "gas_estimate": gas_estimate,
+                    "price_impact": f"1 ASPECTA = {amount_out_formatted/amount_in:.8f} WBNB",
+                    "dex": "PancakeSwap V3",
+                    "note": f"Using {try_fee/10000}% fee tier (has liquidity)" if try_fee != fee else None
+                })
+                
+            except Exception as fee_error:
+                # Continue to next fee tier if this one fails
+                continue
         
-        # Convert amount out from wei to readable format (18 decimals for WBNB)
-        amount_out_formatted = amount_out / (10 ** 18)
-        
+        # If all fee tiers fail, return the original error
         return jsonify({
-            "amount_in": amount_in,
-            "amount_in_wei": amount_in_wei,
-            "amount_out": amount_out,
-            "amount_out_formatted": f"{amount_out_formatted:.6f} WBNB",
-            "fee": fee,
-            "fee_percentage": f"{fee/10000}%",
-            "gas_estimate": gas_estimate,
-            "price_impact": f"1 ASPECTA = {amount_out_formatted/amount_in:.8f} WBNB",
-            "dex": "PancakeSwap V3"
-        })
+            "error": "No liquidity available in any fee tier for this token pair",
+            "details": "ASPECTA-WBNB pools exist but may not have sufficient liquidity for this trade size",
+            "suggestion": "Try a smaller amount or check if the token has liquidity on other DEXes"
+        }), 400
+        
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
