@@ -1,0 +1,537 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <link rel="icon" type="image/x-icon" href="/favicon.ico" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Uniswap V3 ASPECTA Token Swapper</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
+            overflow: hidden;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #ff6b6b 0%, #ee5a24 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+
+        .header h1 {
+            font-size: 2.5rem;
+            margin-bottom: 10px;
+            font-weight: 700;
+        }
+
+        .header p {
+            font-size: 1.1rem;
+            opacity: 0.9;
+        }
+
+        .main-content {
+            padding: 40px;
+        }
+
+        .section {
+            margin-bottom: 30px;
+            padding: 25px;
+            border: 2px solid #f1f3f4;
+            border-radius: 15px;
+            background: #fafbfc;
+            transition: all 0.3s ease;
+        }
+
+        .section:hover {
+            border-color: #667eea;
+            transform: translateY(-2px);
+            box-shadow: 0 10px 20px rgba(102, 126, 234, 0.1);
+        }
+
+        .section h2 {
+            color: #2c3e50;
+            margin-bottom: 20px;
+            font-size: 1.5rem;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .section h2::before {
+            content: "🔄";
+            font-size: 1.2rem;
+        }
+
+        .token-info h2::before {
+            content: "📊";
+        }
+
+        .pool-info h2::before {
+            content: "🏊";
+        }
+
+        .quote h2::before {
+            content: "💰";
+        }
+
+        .approve h2::before {
+            content: "✅";
+        }
+
+        .swap h2::before {
+            content: "🔄";
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 600;
+            color: #34495e;
+            font-size: 0.95rem;
+        }
+
+        input[type="text"], input[type="number"], select {
+            width: 100%;
+            padding: 12px 16px;
+            border: 2px solid #e9ecef;
+            border-radius: 10px;
+            font-size: 1rem;
+            transition: all 0.3s ease;
+            background: white;
+        }
+
+        input[type="text"]:focus, input[type="number"]:focus, select:focus {
+            outline: none;
+            border-color: #667eea;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+        }
+
+        button {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 14px 28px;
+            border-radius: 10px;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            margin-right: 10px;
+            margin-bottom: 10px;
+        }
+
+        button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 20px rgba(102, 126, 234, 0.3);
+        }
+
+        button:active {
+            transform: translateY(0);
+        }
+
+        button:disabled {
+            background: #bdc3c7;
+            cursor: not-allowed;
+            transform: none;
+            box-shadow: none;
+        }
+
+        .result {
+            background: #f8f9fa;
+            border: 2px solid #e9ecef;
+            border-radius: 10px;
+            padding: 20px;
+            margin-top: 20px;
+            font-family: 'Courier New', monospace;
+            font-size: 0.9rem;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            max-height: 300px;
+            overflow-y: auto;
+        }
+
+        .result.success {
+            background: #d4edda;
+            border-color: #c3e6cb;
+            color: #155724;
+        }
+
+        .result.error {
+            background: #f8d7da;
+            border-color: #f5c6cb;
+            color: #721c24;
+        }
+
+        .loading {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #667eea;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin-left: 10px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .info-card {
+            background: linear-gradient(135deg, #74b9ff 0%, #0984e3 100%);
+            color: white;
+            padding: 20px;
+            border-radius: 15px;
+            margin-bottom: 30px;
+        }
+
+        .info-card h3 {
+            margin-bottom: 10px;
+            font-size: 1.2rem;
+        }
+
+        .info-card p {
+            opacity: 0.9;
+            line-height: 1.5;
+        }
+
+        .warning {
+            background: #fff3cd;
+            border: 2px solid #ffeaa7;
+            color: #856404;
+            padding: 15px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+        }
+
+        .warning strong {
+            display: block;
+            margin-bottom: 5px;
+        }
+
+        @media (max-width: 768px) {
+            .container {
+                margin: 10px;
+                border-radius: 15px;
+            }
+            
+            .header {
+                padding: 20px;
+            }
+            
+            .header h1 {
+                font-size: 2rem;
+            }
+            
+            .main-content {
+                padding: 20px;
+            }
+            
+            .section {
+                padding: 20px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🦄 Uniswap V3 ASPECTA Swapper</h1>
+            <p>Swap ASPECTA tokens on Binance Smart Chain</p>
+        </div>
+
+        <div class="main-content">
+            <div class="info-card">
+                <h3>📋 Instructions</h3>
+                <p>This tool allows you to interact with the ASPECTA token on Binance Smart Chain through Uniswap V3. 
+                   Start by checking token information and pool availability, then get quotes before performing swaps.</p>
+            </div>
+
+            <div class="warning">
+                <strong>⚠️ Security Warning</strong>
+                This is a demonstration tool. Never use real private keys with significant funds in a web interface like this.
+            </div>
+
+            <!-- Token Information -->
+            <div class="section token-info">
+                <h2>Token Information</h2>
+                <button onclick="getTokenInfo()">Get ASPECTA Token Info</button>
+                <div id="token-info-result" class="result"></div>
+            </div>
+
+            <!-- Pool Information -->
+            <div class="section pool-info">
+                <h2>Pool Information</h2>
+                <button onclick="getPoolInfo()">Find Uniswap V3 Pools</button>
+                <div id="pool-info-result" class="result"></div>
+            </div>
+
+            <!-- Get Quote -->
+            <div class="section quote">
+                <h2>Get Swap Quote</h2>
+                <div class="form-group">
+                    <label for="quote-amount">Amount of ASPECTA to swap:</label>
+                    <input type="number" id="quote-amount" placeholder="e.g., 100" step="0.000001">
+                </div>
+                <div class="form-group">
+                    <label for="quote-fee">Fee Tier:</label>
+                    <select id="quote-fee">
+                        <option value="100">0.01% (100)</option>
+                        <option value="500">0.05% (500)</option>
+                        <option value="3000" selected>0.3% (3000)</option>
+                        <option value="10000">1% (10000)</option>
+                    </select>
+                </div>
+                <button onclick="getQuote()">Get Quote</button>
+                <div id="quote-result" class="result"></div>
+            </div>
+
+            <!-- Approve Token -->
+            <div class="section approve">
+                <h2>Approve Token</h2>
+                <div class="form-group">
+                    <label for="approve-private-key">Private Key:</label>
+                    <input type="text" id="approve-private-key" placeholder="0x...">
+                </div>
+                <div class="form-group">
+                    <label for="approve-account">Account Address:</label>
+                    <input type="text" id="approve-account" placeholder="0x...">
+                </div>
+                <div class="form-group">
+                    <label for="approve-amount">Amount to approve:</label>
+                    <input type="number" id="approve-amount" placeholder="e.g., 1000" step="0.000001">
+                </div>
+                <button onclick="approveToken()">Approve Token</button>
+                <div id="approve-result" class="result"></div>
+            </div>
+
+            <!-- Swap Token -->
+            <div class="section swap">
+                <h2>Swap Token</h2>
+                <div class="form-group">
+                    <label for="swap-private-key">Private Key:</label>
+                    <input type="text" id="swap-private-key" placeholder="0x...">
+                </div>
+                <div class="form-group">
+                    <label for="swap-account">Account Address:</label>
+                    <input type="text" id="swap-account" placeholder="0x...">
+                </div>
+                <div class="form-group">
+                    <label for="swap-amount-in">Amount of ASPECTA to swap:</label>
+                    <input type="number" id="swap-amount-in" placeholder="e.g., 100" step="0.000001">
+                </div>
+                <div class="form-group">
+                    <label for="swap-amount-out-min">Minimum WBNB to receive (slippage protection):</label>
+                    <input type="number" id="swap-amount-out-min" placeholder="e.g., 0.001" step="0.000001">
+                </div>
+                <div class="form-group">
+                    <label for="swap-fee">Fee Tier:</label>
+                    <select id="swap-fee">
+                        <option value="100">0.01% (100)</option>
+                        <option value="500">0.05% (500)</option>
+                        <option value="3000" selected>0.3% (3000)</option>
+                        <option value="10000">1% (10000)</option>
+                    </select>
+                </div>
+                <button onclick="swapToken()">Swap Token</button>
+                <div id="swap-result" class="result"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Helper function to display results
+        function displayResult(elementId, data, isError = false) {
+            const element = document.getElementById(elementId);
+            element.textContent = typeof data === 'string' ? data : JSON.stringify(data, null, 2);
+            element.className = `result ${isError ? 'error' : 'success'}`;
+        }
+
+        // Helper function to show loading
+        function showLoading(elementId) {
+            const element = document.getElementById(elementId);
+            element.innerHTML = 'Loading... <span class="loading"></span>';
+            element.className = 'result';
+        }
+
+        // Get token information
+        async function getTokenInfo() {
+            const resultElementId = 'token-info-result';
+            showLoading(resultElementId);
+            
+            try {
+                const response = await fetch('/api/token-info');
+                const data = await response.json();
+                
+                if (!response.ok) {
+                    throw new Error(data.error || `HTTP error! status: ${response.status}`);
+                }
+                
+                displayResult(resultElementId, data);
+            } catch (error) {
+                displayResult(resultElementId, `Error: ${error.message}`, true);
+            }
+        }
+
+        // Get pool information
+        async function getPoolInfo() {
+            const resultElementId = 'pool-info-result';
+            showLoading(resultElementId);
+            
+            try {
+                const response = await fetch('/api/pool-info');
+                const data = await response.json();
+                
+                if (!response.ok) {
+                    throw new Error(data.error || `HTTP error! status: ${response.status}`);
+                }
+                
+                displayResult(resultElementId, data);
+            } catch (error) {
+                displayResult(resultElementId, `Error: ${error.message}`, true);
+            }
+        }
+
+        // Get quote
+        async function getQuote() {
+            const resultElementId = 'quote-result';
+            const amount = document.getElementById('quote-amount').value;
+            const fee = document.getElementById('quote-fee').value;
+            
+            if (!amount) {
+                displayResult(resultElementId, 'Error: Please enter an amount', true);
+                return;
+            }
+            
+            showLoading(resultElementId);
+            
+            try {
+                const response = await fetch('/api/quote', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ 
+                        amount_in: parseFloat(amount),
+                        fee: parseInt(fee)
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (!response.ok) {
+                    throw new Error(data.error || `HTTP error! status: ${response.status}`);
+                }
+                
+                displayResult(resultElementId, data);
+            } catch (error) {
+                displayResult(resultElementId, `Error: ${error.message}`, true);
+            }
+        }
+
+        // Approve token
+        async function approveToken() {
+            const resultElementId = 'approve-result';
+            const privateKey = document.getElementById('approve-private-key').value;
+            const account = document.getElementById('approve-account').value;
+            const amount = document.getElementById('approve-amount').value;
+            
+            if (!privateKey || !account || !amount) {
+                displayResult(resultElementId, 'Error: Please fill in all fields', true);
+                return;
+            }
+            
+            showLoading(resultElementId);
+            
+            try {
+                const response = await fetch('/api/approve', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        private_key: privateKey,
+                        account_address: account,
+                        amount: parseFloat(amount)
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (!response.ok) {
+                    throw new Error(data.error || `HTTP error! status: ${response.status}`);
+                }
+                
+                displayResult(resultElementId, data);
+            } catch (error) {
+                displayResult(resultElementId, `Error: ${error.message}`, true);
+            }
+        }
+
+        // Swap token
+        async function swapToken() {
+            const resultElementId = 'swap-result';
+            const privateKey = document.getElementById('swap-private-key').value;
+            const account = document.getElementById('swap-account').value;
+            const amountIn = document.getElementById('swap-amount-in').value;
+            const amountOutMin = document.getElementById('swap-amount-out-min').value;
+            const fee = document.getElementById('swap-fee').value;
+            
+            if (!privateKey || !account || !amountIn || !amountOutMin) {
+                displayResult(resultElementId, 'Error: Please fill in all fields', true);
+                return;
+            }
+            
+            showLoading(resultElementId);
+            
+            try {
+                const response = await fetch('/api/swap', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        private_key: privateKey,
+                        account_address: account,
+                        amount_in: parseFloat(amountIn),
+                        amount_out_minimum: parseFloat(amountOutMin),
+                        fee: parseInt(fee)
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (!response.ok) {
+                    throw new Error(data.error || `HTTP error! status: ${response.status}`);
+                }
+                
+                displayResult(resultElementId, data);
+            } catch (error) {
+                displayResult(resultElementId, `Error: ${error.message}`, true);
+            }
+        }
+
+        // Load token info on page load
+        window.addEventListener('load', function() {
+            getTokenInfo();
+        });
+    </script>
+</body>
+</html>
+
