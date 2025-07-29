@@ -4,6 +4,7 @@ from web3 import Web3
 from web3.middleware import ExtraDataToPOAMiddleware
 import json
 import logging
+import time
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
@@ -46,14 +47,25 @@ PANCAKESWAP_V3_FACTORY_ABI = [
 ]
 
 # Initialize Web3
+logger.info(f"Initializing Web3 with RPC: {BNB_CHAIN_RPC}")
 w3 = Web3(Web3.HTTPProvider(BNB_CHAIN_RPC))
 w3.middleware_onion.inject(ExtraDataToPOAMiddleware, layer=0)
+
+# Test Web3 connection on startup
+try:
+    is_connected = w3.is_connected()
+    chain_id = w3.eth.chain_id if is_connected else None
+    logger.info(f"Web3 connection status: {is_connected}, Chain ID: {chain_id}")
+except Exception as e:
+    logger.error(f"Web3 connection test failed: {e}")
 
 @uniswap_bp.route("/token-info", methods=["GET"])
 def get_token_info():
     """Get ASPECTA token information"""
+    logger.info("Token info request received")
     try:
         if not w3.is_connected():
+            logger.error("Web3 not connected for token info")
             return jsonify({"error": "Failed to connect to BNB Smart Chain"}), 500
 
         token_contract = w3.eth.contract(address=w3.to_checksum_address(CONTRACT_ADDRESS), abi=ERC20_ABI)
@@ -63,6 +75,7 @@ def get_token_info():
         decimals = token_contract.functions.decimals().call()
         total_supply = token_contract.functions.totalSupply().call()
 
+        logger.info(f"Token info retrieved successfully: {name} ({symbol})")
         return jsonify({
             "address": CONTRACT_ADDRESS,
             "name": name,
@@ -72,13 +85,16 @@ def get_token_info():
             "total_supply_formatted": f"{total_supply / (10 ** decimals):,.6f} {symbol}"
         })
     except Exception as e:
+        logger.exception("Error getting token info")
         return jsonify({"error": str(e)}), 500
 
 @uniswap_bp.route("/pool-info", methods=["GET"])
 def get_pool_info():
     """Find PancakeSwap V3 pools for the token paired with WBNB"""
+    logger.info("Pool info request received")
     try:
         if not w3.is_connected():
+            logger.error("Web3 not connected for pool info")
             return jsonify({"error": "Failed to connect to BNB Smart Chain"}), 500
         
         factory_contract = w3.eth.contract(
@@ -105,6 +121,7 @@ def get_pool_info():
                     "dex": "PancakeSwap V3"
                 })
         
+        logger.info(f"Found {len(found_pools)} pools")
         return jsonify({
             "pools_found": len(found_pools),
             "pools": found_pools,
@@ -112,18 +129,27 @@ def get_pool_info():
             "note": "Using PancakeSwap V3 as it's more popular on BSC than Uniswap V3"
         })
     except Exception as e:
+        logger.exception("Error getting pool info")
         return jsonify({"error": str(e)}), 500
 
 @uniswap_bp.route("/quote", methods=["POST"])
 def get_quote():
     """Get a quote for swapping ASPECTA to WBNB using PancakeSwap V3"""
-    logger.info("Received quote request")
+    start_time = time.time()
+    logger.info("Quote request received")
+    
     try:
+        # Log environment info
+        logger.info(f"Environment check - Web3 connected: {w3.is_connected()}")
+        if w3.is_connected():
+            logger.info(f"Chain ID: {w3.eth.chain_id}")
+            logger.info(f"Latest block: {w3.eth.block_number}")
+        
         data = request.get_json()
         amount_in = data.get("amount_in")
         fee = data.get("fee", 10000)  # Default to 1% fee tier as it has liquidity
         
-        logger.info(f"Request data: amount_in={amount_in}, fee={fee}")
+        logger.info(f"Request data: amount_in={amount_in}, fee={fee}, type(fee)={type(fee)}")
 
         if not amount_in:
             logger.error("amount_in is required")
@@ -131,14 +157,31 @@ def get_quote():
         
         if not w3.is_connected():
             logger.error("Failed to connect to BNB Smart Chain")
-            return jsonify({"error": "Failed to connect to BNB Smart Chain"}), 500
+            return jsonify({
+                "error": "Failed to connect to BNB Smart Chain",
+                "debug_info": {
+                    "rpc_endpoint": BNB_CHAIN_RPC,
+                    "connection_test": False
+                }
+            }), 500
         
         # Convert amount to wei (18 decimals for ASPECTA)
         amount_in_wei = int(amount_in * (10 ** 18))
         logger.info(f"Converted amount_in to wei: {amount_in_wei}")
 
-        quoter_contract = w3.eth.contract(address=w3.to_checksum_address(PANCAKESWAP_V3_QUOTER_ADDRESS), abi=QUOTER_V2_ABI)
-        logger.info(f"Quoter contract initialized: {PANCAKESWAP_V3_QUOTER_ADDRESS}")
+        # Test quoter contract initialization
+        try:
+            quoter_contract = w3.eth.contract(address=w3.to_checksum_address(PANCAKESWAP_V3_QUOTER_ADDRESS), abi=QUOTER_V2_ABI)
+            logger.info(f"Quoter contract initialized successfully: {PANCAKESWAP_V3_QUOTER_ADDRESS}")
+        except Exception as contract_error:
+            logger.error(f"Failed to initialize quoter contract: {contract_error}")
+            return jsonify({
+                "error": "Failed to initialize quoter contract",
+                "debug_info": {
+                    "quoter_address": PANCAKESWAP_V3_QUOTER_ADDRESS,
+                    "contract_error": str(contract_error)
+                }
+            }), 500
 
         # Try different fee tiers in order of preference (1% has liquidity)
         fee_tiers_to_try = [fee, 10000, 500, 100, 2500]  # Try requested fee first, then 1% (working), then others
@@ -156,14 +199,34 @@ def get_quote():
                 }
                 logger.info(f"Quote parameters: {params}")
                 
+                # Test network connectivity before making the call
+                try:
+                    test_block = w3.eth.block_number
+                    logger.info(f"Network test successful, current block: {test_block}")
+                except Exception as network_error:
+                    logger.error(f"Network connectivity test failed: {network_error}")
+                    return jsonify({
+                        "error": "Network connectivity issue",
+                        "debug_info": {
+                            "network_error": str(network_error),
+                            "rpc_endpoint": BNB_CHAIN_RPC
+                        }
+                    }), 500
+                
                 # Call the quoteExactInputSingle function
+                logger.info("Making quoteExactInputSingle call...")
+                call_start = time.time()
                 result = quoter_contract.functions.quoteExactInputSingle(params).call()
+                call_duration = time.time() - call_start
+                logger.info(f"Quote call completed in {call_duration:.2f} seconds")
+                
                 amount_out, sqrt_price_x96_after, initialized_ticks_crossed, gas_estimate = result
                 
                 # Convert amount out from wei to readable format (18 decimals for WBNB)
                 amount_out_formatted = amount_out / (10 ** 18)
                 logger.info(f"Quote successful with fee {try_fee}: amount_out={amount_out_formatted}")
                 
+                total_duration = time.time() - start_time
                 return jsonify({
                     "amount_in": amount_in,
                     "amount_in_wei": amount_in_wei,
@@ -174,47 +237,77 @@ def get_quote():
                     "gas_estimate": gas_estimate,
                     "price_impact": f"1 ASPECTA = {amount_out_formatted/amount_in:.8f} WBNB",
                     "dex": "PancakeSwap V3",
-                    "note": f"Using {try_fee/10000}% fee tier (has liquidity)" if try_fee != fee else None
+                    "note": f"Using {try_fee/10000}% fee tier (has liquidity)" if try_fee != fee else None,
+                    "debug_info": {
+                        "total_duration": f"{total_duration:.2f}s",
+                        "call_duration": f"{call_duration:.2f}s",
+                        "successful_fee_tier": try_fee
+                    }
                 })
                 
             except Exception as fee_error:
                 logger.warning(f"Quote failed for fee tier {try_fee}: {fee_error}")
+                logger.warning(f"Error type: {type(fee_error).__name__}")
                 # Continue to next fee tier if this one fails
                 continue
         
-        # If all fee tiers fail, return the original error
+        # If all fee tiers fail, return detailed error info
+        total_duration = time.time() - start_time
         logger.error("No liquidity available in any fee tier after trying all options.")
         return jsonify({
             "error": "No liquidity available in any fee tier for this token pair",
             "details": "ASPECTA-WBNB pools exist but may not have sufficient liquidity for this trade size",
-            "suggestion": "Try a smaller amount or check if the token has liquidity on other DEXes"
+            "suggestion": "Try a smaller amount or check if the token has liquidity on other DEXes",
+            "debug_info": {
+                "total_duration": f"{total_duration:.2f}s",
+                "fee_tiers_tried": fee_tiers_to_try,
+                "rpc_endpoint": BNB_CHAIN_RPC,
+                "web3_connected": w3.is_connected(),
+                "chain_id": w3.eth.chain_id if w3.is_connected() else None
+            }
         }), 400
         
     except Exception as e:
+        total_duration = time.time() - start_time
         logger.exception("An unexpected error occurred during quote request.")
-        return jsonify({"error": str(e)}), 500
+        return jsonify({
+            "error": str(e),
+            "debug_info": {
+                "total_duration": f"{total_duration:.2f}s",
+                "error_type": type(e).__name__,
+                "rpc_endpoint": BNB_CHAIN_RPC
+            }
+        }), 500
 
 @uniswap_bp.route("/approve", methods=["POST"])
 def approve_token():
     """Approve the PancakeSwap V3 Router to spend ASPECTA tokens"""
+    logger.info("Approve token request received")
     try:
         data = request.get_json()
         private_key = data.get("private_key")
         account_address = data.get("account_address")
         amount = data.get("amount")
         
+        logger.info(f"Approve request: account={account_address}, amount={amount}")
+        
         if not private_key or not account_address or not amount:
+            logger.error("Missing required fields for approve")
             return jsonify({"error": "private_key, account_address, and amount are required"}), 400
         
         if not w3.is_connected():
+            logger.error("Web3 not connected for approve")
             return jsonify({"error": "Failed to connect to BNB Smart Chain"}), 500
         
         # Convert amount to wei
         amount_wei = int(amount * (10 ** 18))
+        logger.info(f"Amount in wei: {amount_wei}")
         
         token_contract = w3.eth.contract(address=w3.to_checksum_address(CONTRACT_ADDRESS), abi=ERC20_ABI)
         account_address = w3.to_checksum_address(account_address)
         nonce = w3.eth.get_transaction_count(account_address)
+        
+        logger.info(f"Account nonce: {nonce}")
         
         # Build the transaction
         txn = token_contract.functions.approve(
@@ -227,11 +320,36 @@ def approve_token():
             "nonce": nonce,
         })
         
+        logger.info(f"Transaction built: {txn}")
+        
         # Sign the transaction
+        logger.info("Signing transaction...")
         signed_txn = w3.eth.account.sign_transaction(txn, private_key)
+        logger.info(f"Transaction signed, type: {type(signed_txn)}")
+        
+        # Fix for the rawTransaction attribute error
+        # In newer versions of web3.py, it might be 'raw_transaction' instead of 'rawTransaction'
+        raw_transaction = None
+        if hasattr(signed_txn, 'rawTransaction'):
+            raw_transaction = signed_txn.rawTransaction
+            logger.info("Using rawTransaction attribute")
+        elif hasattr(signed_txn, 'raw_transaction'):
+            raw_transaction = signed_txn.raw_transaction
+            logger.info("Using raw_transaction attribute")
+        else:
+            logger.error(f"Signed transaction object attributes: {dir(signed_txn)}")
+            return jsonify({
+                "error": "Unable to access raw transaction data",
+                "debug_info": {
+                    "signed_txn_type": str(type(signed_txn)),
+                    "available_attributes": [attr for attr in dir(signed_txn) if not attr.startswith('_')]
+                }
+            }), 500
         
         # Send the transaction
-        tx_hash = w3.eth.send_raw_transaction(signed_txn.rawTransaction)
+        logger.info("Sending transaction...")
+        tx_hash = w3.eth.send_raw_transaction(raw_transaction)
+        logger.info(f"Transaction sent: {tx_hash.hex()}")
         
         return jsonify({
             "success": True,
@@ -242,11 +360,18 @@ def approve_token():
             "dex": "PancakeSwap V3"
         })
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        logger.exception("Error in approve token")
+        return jsonify({
+            "error": str(e),
+            "debug_info": {
+                "error_type": type(e).__name__
+            }
+        }), 500
 
 @uniswap_bp.route("/swap", methods=["POST"])
 def swap_token():
     """Perform a token swap from ASPECTA to WBNB using PancakeSwap V3"""
+    logger.info("Swap token request received")
     try:
         data = request.get_json()
         private_key = data.get("private_key")
@@ -255,10 +380,14 @@ def swap_token():
         amount_out_min = data.get("amount_out_min")
         fee = data.get("fee")
         
+        logger.info(f"Swap request: account={account_address}, amount_in={amount_in}, amount_out_min={amount_out_min}, fee={fee}")
+        
         if not all([private_key, account_address, amount_in, amount_out_min, fee]):
+            logger.error("Missing required fields for swap")
             return jsonify({"error": "private_key, account_address, amount_in, amount_out_min, and fee are required"}), 400
         
         if not w3.is_connected():
+            logger.error("Web3 not connected for swap")
             return jsonify({"error": "Failed to connect to BNB Smart Chain"}), 500
         
         # Convert amounts to wei
@@ -269,39 +398,12 @@ def swap_token():
         
         # Get the current nonce for the account
         nonce = w3.eth.get_transaction_count(account_address)
+        logger.info(f"Account nonce: {nonce}")
         
         # Get the router contract
         router_contract = w3.eth.contract(address=w3.to_checksum_address(PANCAKESWAP_V3_ROUTER_ADDRESS), abi=ROUTER_ABI)
         
-        # Prepare the swap parameters for exactInputSingle
-        # This is a simplified example, a real Universal Router swap would be more complex
-        # and involve encoding commands. For now, we'll use a direct swap if possible.
-        
-        # This part needs to be carefully constructed based on Universal Router's exactInputSingle
-        # For PancakeSwap V3, the router has a specific `exactInputSingle` function
-        # We need to ensure the ABI and function call match the PancakeSwap V3 Router
-        
-        # Example of how exactInputSingle might be called on PancakeSwap V3 Router
-        # This is a placeholder and needs to be verified against the actual ABI
-        
-        # First, ensure the ABI loaded for ROUTER_ABI is the correct PancakeSwap V3 Router ABI
-        # If it's UniversalRouter_abi.json, it might not have exactInputSingle directly
-        # We might need to use a different ABI or a different approach for the swap.
-        
-        # For now, let's assume the ROUTER_ABI has the correct `exactInputSingle`
-        # If not, this will fail and require loading the correct PancakeSwap V3 Router ABI
-        
         # Example parameters for exactInputSingle (PancakeSwap V3 Router)
-        # struct ExactInputSingleParams {
-        #     address tokenIn;
-        #     address tokenOut;
-        #     uint24 fee;
-        #     address recipient;
-        #     uint256 amountIn;
-        #     uint256 amountOutMinimum;
-        #     uint160 sqrtPriceLimitX96;
-        # }
-        
         swap_params = (
             w3.to_checksum_address(CONTRACT_ADDRESS),  # tokenIn
             w3.to_checksum_address(WBNB_ADDRESS),      # tokenOut
@@ -312,6 +414,8 @@ def swap_token():
             0                                          # sqrtPriceLimitX96 (0 for no limit)
         )
         
+        logger.info(f"Swap parameters: {swap_params}")
+        
         # Build the transaction
         txn = router_contract.functions.exactInputSingle(swap_params).build_transaction({
             "chainId": w3.eth.chain_id,
@@ -320,11 +424,30 @@ def swap_token():
             "nonce": nonce,
         })
         
+        logger.info(f"Swap transaction built: {txn}")
+        
         # Sign the transaction
         signed_txn = w3.eth.account.sign_transaction(txn, private_key)
         
+        # Fix for the rawTransaction attribute error (same as approve)
+        raw_transaction = None
+        if hasattr(signed_txn, 'rawTransaction'):
+            raw_transaction = signed_txn.rawTransaction
+        elif hasattr(signed_txn, 'raw_transaction'):
+            raw_transaction = signed_txn.raw_transaction
+        else:
+            logger.error(f"Signed transaction object attributes: {dir(signed_txn)}")
+            return jsonify({
+                "error": "Unable to access raw transaction data",
+                "debug_info": {
+                    "signed_txn_type": str(type(signed_txn)),
+                    "available_attributes": [attr for attr in dir(signed_txn) if not attr.startswith('_')]
+                }
+            }), 500
+        
         # Send the transaction
-        tx_hash = w3.eth.send_raw_transaction(signed_txn.rawTransaction)
+        tx_hash = w3.eth.send_raw_transaction(raw_transaction)
+        logger.info(f"Swap transaction sent: {tx_hash.hex()}")
         
         return jsonify({
             "success": True,
@@ -335,5 +458,11 @@ def swap_token():
             "dex": "PancakeSwap V3"
         })
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        logger.exception("Error in swap token")
+        return jsonify({
+            "error": str(e),
+            "debug_info": {
+                "error_type": type(e).__name__
+            }
+        }), 500
 
